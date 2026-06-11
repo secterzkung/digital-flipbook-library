@@ -51,7 +51,7 @@ function updateLog(msg, isErr = false) {
 }
 
 async function generateFlipbook(pdfSource, bookTitleText) {
-  showLoading(true, "Extracting PDF contents...");
+  showLoading(true, "กำลังดึงข้อมูลจากไฟล์ PDF...");
   document.getElementById("currentFileInfo").textContent = bookTitleText;
   
   const wrapper = document.getElementById("flipbookWrapper");
@@ -67,7 +67,7 @@ async function generateFlipbook(pdfSource, bookTitleText) {
     const totalPages = activePdfDoc.numPages;
 
     for (let pNum = 1; pNum <= totalPages; pNum++) {
-      updateLog(`Rendering page ${pNum} / ${totalPages}...`);
+      updateLog(`กำลังเรนเดอร์หน้ากระดาษที่ ${pNum} / ${totalPages}...`);
       const page = await activePdfDoc.getPage(pNum);
       const viewport = page.getViewport({ scale: 1.5 });
 
@@ -85,17 +85,17 @@ async function generateFlipbook(pdfSource, bookTitleText) {
       await page.render({ canvasContext: ctx, viewport: viewport }).promise;
     }
 
-    showLoading(true, "Assembling 3D structural model...");
+    showLoading(true, "กำลังจัดโครงสร้างหนังสือ 3D...");
     const samplePage = await activePdfDoc.getPage(1);
     const sampleViewport = samplePage.getViewport({ scale: 1.5 });
 
     flipObj = new St.PageFlip(wrapper, {
       width: sampleViewport.width,
       height: sampleViewport.height,
-      size: "stretch",
-      minWidth: 300,
+      size: "stretch", // ขยายตัวเล่มให้ใหญ่ที่สุดตามขนาดหน้าจอโดยสัดส่วนไม่เพี้ยน
+      minWidth: 200,
       maxWidth: 2000,
-      minHeight: 400,
+      minHeight: 300,
       maxHeight: 2000,
       drawShadow: true,
       showCover: true,
@@ -103,109 +103,61 @@ async function generateFlipbook(pdfSource, bookTitleText) {
     });
 
     flipObj.loadFromHTML(document.querySelectorAll(".page-sheet"));
-    document.getElementById("pageTxtIndicator").textContent = `Page 1 / ${totalPages}`;
+    document.getElementById("pageTxtIndicator").textContent = `หน้า 1 / ${totalPages}`;
     
     flipObj.on("flip", (e) => {
-      document.getElementById("pageTxtIndicator").textContent = `Page ${e.data + 1} / ${totalPages}`;
+      document.getElementById("pageTxtIndicator").textContent = `หน้า ${e.data + 1} / ${totalPages}`;
       document.getElementById("pageDirectJump").value = e.data + 1;
     });
 
     showLoading(false);
-    updateLog("Interactive 3D Flipbook assembled successfully.");
+    updateLog("สร้างหนังสือ Flipbook 3D เสร็จสมบูรณ์");
     return totalPages;
 
   } catch(err) {
     console.error(err);
     showLoading(false);
-    updateLog("Error: system was unable to build this flipbook.", true);
+    updateLog("เกิดข้อผิดพลาด: ไม่สามารถเปิดอ่านไฟล์ PDF เล่มนี้ได้", true);
   }
-}
-
-// ปรับปรุงฟังก์ชันสร้างลิงก์ให้แชร์แบบเห็นเฉพาะหน้าหนังสือเดี่ยวๆ ด้วย ?view=book
-async function makeShareableLink() {
-  const hashMode = window.location.hash;
-  const baseUrl = window.location.href.split('?')[0].split('#')[0];
-  
-  if (hashMode && hashMode.startsWith("#url=")) {
-    const targetUrl = hashMode.substring(5);
-    return `${baseUrl}?view=book#url=${targetUrl}`;
-  }
-  
-  const saved = await getPdfFromLocal();
-  if (!saved) {
-    alert("กรุณาอัพโหลดไฟล์ PDF เข้าไปในเครื่องก่อน จึงจะสามารถสร้างลิงก์แชร์ได้ครับ!");
-    return null;
-  }
-  
-  showLoading(true, "Encoding document database to shareable url...");
-  const bytes = new Uint8Array(saved.data);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64Data = btoa(binary);
-  
-  showLoading(false);
-  return `${baseUrl}?view=book#data=${encodeURIComponent(saved.name)}|${base64Data}`;
 }
 
 async function startApp() {
-  // ตรวจสอบ Parameter '?view=book' เพื่อซ่อนสิ่งกีดขวางสายตาสำหรับเพื่อนผู้รับแชร์
+  // ตรวจจับโหมดเปิดลิงก์แชร์ (?view=book) -> ถ้าใช่ ทำการซ่อนทุกอย่าง เหลือแค่หน้าหนังสือทันที
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get("view") === "book") {
     document.getElementById("topNavbar").style.display = "none";
     document.getElementById("leftControlPanel").style.display = "none";
     document.getElementById("statusAlert").style.display = "none";
     
-    // ขยายพื้นที่แสดงผลส่วน Viewer ให้เต็มจอกลืนไปกับเบราว์เซอร์
     const workspaceLayout = document.querySelector(".workspace-layout");
     if (workspaceLayout) workspaceLayout.style.height = "100vh";
   }
 
   const hash = window.location.hash;
   
-  if (hash && hash.startsWith("#data=")) {
-    try {
-      const payload = decodeURIComponent(hash.substring(6));
-      const parts = payload.split("|");
-      const filename = parts[0];
-      const base64 = parts[1];
-      
-      updateLog("Decoding received share link package...");
-      const binaryStr = atob(base64);
-      const len = binaryStr.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      
-      await generateFlipbook({ data: bytes.buffer }, `Shared: ${filename}`);
-      return;
-    } catch(e) {
-      updateLog("Failed to load attached share data package.", true);
-    }
-  }
-
+  // รองรับการแชร์แบบ URL ตรงเสถียรสูง 100%
   if (hash && hash.startsWith("#url=")) {
     const targetUrl = decodeURIComponent(hash.substring(5));
-    await generateFlipbook(targetUrl, `Remote: ${targetUrl}`);
+    await generateFlipbook(targetUrl, `คลังออนไลน์: ${targetUrl.substring(targetUrl.lastIndexOf('/')+1)}`);
     return;
   }
 
+  // โหลดไฟล์ในหน่วยความจำของบราวเซอร์ตนเอง (อัปโหลดครั้งเดียวอยู่ตลอดไป)
   const savedFile = await getPdfFromLocal();
   if (savedFile) {
     document.getElementById("deleteSavedFileBtn").classList.remove("hidden");
     await generateFlipbook({ data: savedFile.data }, savedFile.name);
   } else {
-    updateLog("Workspace ready. Awaiting digital assets submission.");
+    updateLog("Workspace พร้อมใช้งาน กรุณาอัปโหลดไฟล์ PDF");
   }
 }
 
+// ควบคุมการอัปโหลดไฟล์ในเครื่องตนเอง
 document.getElementById("pdfFileSelector").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file || file.type !== "application/pdf") return;
   
-  showLoading(true, "Reading local file structure...");
+  showLoading(true, "กำลังอ่านโครงสร้างไฟล์คอมพิวเตอร์ของคุณ...");
   const reader = new FileReader();
   reader.onload = async (event) => {
     const arrayBuffer = event.target.result;
@@ -216,39 +168,49 @@ document.getElementById("pdfFileSelector").addEventListener("change", async (e) 
   reader.readAsArrayBuffer(file);
 });
 
+// ลบไฟล์ออกจากเบราว์เซอร์
 document.getElementById("deleteSavedFileBtn").addEventListener("click", async () => {
-  if (confirm("คุณแน่ใจใช่ไหมว่าต้องการลบไฟล์เล่มนี้ออกจากระบบความจำเครื่องเบราว์เซอร์?")) {
+  if (confirm("คุณแน่ใจใช่ไหมว่าต้องการลบไฟล์เล่มนี้ออกจากระบบความจำเครื่อง?")) {
     await clearLocalPdf();
     window.location.hash = "";
     window.location.reload();
   }
 });
 
-document.getElementById("generateShareLinkBtn").addEventListener("click", async () => {
-  const url = await makeShareableLink();
-  if (url) {
-    const area = document.getElementById("shareLinkArea");
-    area.classList.remove("hidden");
-    const input = document.getElementById("shareUrlInput");
-    input.value = url;
-    input.select();
+// ปุ่มสร้างลิงก์แชร์แบบเห็นเฉพาะหน้าหนังสือ
+document.getElementById("generateUrlShareBtn").addEventListener("click", () => {
+  const pdfUrl = document.getElementById("shareDirectUrlInput").value.trim();
+  if (!pdfUrl) {
+    alert("กรุณากรอกลิงก์ตรงของไฟล์ PDF ก่อนครับ!");
+    return;
   }
+  
+  // แยกเอาเฉพาะ Base URL ของเว็บออกมารวมกับคำสั่งเปิดหนังสือเต็มจอ (?view=book)
+  const baseUrl = window.location.href.split('?')[0].split('#')[0];
+  const finalShareUrl = `${baseUrl}?view=book#url=${encodeURIComponent(pdfUrl)}`;
+  
+  const area = document.getElementById("shareLinkArea");
+  area.classList.remove("hidden");
+  const input = document.getElementById("shareUrlInput");
+  input.value = finalShareUrl;
+  input.select();
 });
 
 document.getElementById("copyUrlBtn").addEventListener("click", () => {
   const input = document.getElementById("shareUrlInput");
   input.select();
   navigator.clipboard.writeText(input.value);
-  alert("คัดลอกลิงก์แชร์เวอร์ชันเห็นเฉพาะหน้าหนังสือเรียบร้อยแล้ว! สามารถนำไปส่งต่อให้เพื่อนได้เลยครับ");
+  alert("คัดลอกลิงก์แชร์แบบเต็มหน้าจอเรียบร้อยแล้ว! สามารถส่งให้เพื่อนเปิดได้ทันทีครับ");
 });
 
 document.getElementById("loadUrlBtn").addEventListener("click", async () => {
   const url = document.getElementById("directUrlInput").value.trim();
   if (!url) return;
   window.location.hash = `#url=${encodeURIComponent(url)}`;
-  await generateFlipbook(url, `Remote: ${url}`);
+  await generateFlipbook(url, url);
 });
 
+// ชุดปุ่มคำสั่งควบคุมหน้ากระดาษ
 document.getElementById("btnPrevPage").addEventListener("click", () => flipObj?.flipPrev());
 document.getElementById("btnNextPage").addEventListener("click", () => flipObj?.flipNext());
 document.getElementById("btnJumpPage").addEventListener("click", () => {
@@ -264,4 +226,5 @@ document.getElementById("btnToggleFullscreen").addEventListener("click", () => {
 });
 window.addEventListener("resize", () => flipObj?.update());
 
+// เริ่มต้นระบบ
 startApp();
